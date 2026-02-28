@@ -4,6 +4,9 @@ class Payment {
   final double amount;
   final DateTime date;
   final String paymentGivenBy;
+  final double qty;
+  final String remarks;
+  final String? receiptPath; // Stores filename only (relative to App Docs)
 
   Payment({
     this.id,
@@ -11,6 +14,9 @@ class Payment {
     required this.amount,
     required this.date,
     required this.paymentGivenBy,
+    this.qty = 1.0,
+    this.remarks = '',
+    this.receiptPath,
   });
 
   Map<String, dynamic> toMap() {
@@ -20,6 +26,9 @@ class Payment {
       'amount': amount,
       'date': date.toIso8601String(),
       'payment_given_by': paymentGivenBy,
+      'qty': qty,
+      'remarks': remarks,
+      'receipt_path': receiptPath,
     };
   }
 
@@ -30,6 +39,9 @@ class Payment {
       amount: map['amount'],
       date: DateTime.parse(map['date']),
       paymentGivenBy: map['payment_given_by'],
+      qty: (map['qty'] as num?)?.toDouble() ?? 1.0,
+      remarks: map['remarks'] ?? '',
+      receiptPath: map['receipt_path'],
     );
   }
 }

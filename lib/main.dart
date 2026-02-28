@@ -1,9 +1,15 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import 'database/db_helper.dart';
+import 'database/backup_service.dart';
 import 'models/client.dart';
 import 'models/agency.dart';
 import 'models/payment.dart';
@@ -39,6 +45,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
+  final BackupService _backupService = BackupService();
   List<Client> _clients = [];
 
   @override
@@ -52,6 +59,64 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _clients = clients;
     });
+  }
+
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Settings & Backup'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Backup your data and receipts to a zip file for safe keeping.'),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.upload_file, color: Colors.blue),
+              title: const Text('Export Backup'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _backupService.exportBackup();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_download, color: Colors.green),
+              title: const Text('Import Backup'),
+              subtitle: const Text('Warning: Replaces all current data'),
+              onTap: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Restore Data?'),
+                    content: const Text('This will delete all current entries and replace them with the backup. Proceed?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+                      TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Restore', style: TextStyle(color: Colors.red))),
+                    ],
+                  ),
+                );
+                
+                if (confirm == true) {
+                  if (context.mounted) Navigator.pop(context);
+                  bool success = await _backupService.importBackup();
+                  if (context.mounted) {
+                    if (success) {
+                      _refreshClients();
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup restored successfully')));
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Restore failed or cancelled')));
+                    }
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        ],
+      ),
+    );
   }
 
   void _showClientDialog({Client? client}) {
@@ -137,6 +202,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Clients'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: _showSettingsDialog,
+            tooltip: 'Settings & Backup',
+          ),
+        ],
       ),
       body: _clients.isEmpty
           ? const Center(child: Text('No clients added yet.'))
@@ -409,7 +481,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                       children: [
                         const Text('Total Received from Client:',
                             style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text('\$${_totalReceived.toStringAsFixed(2)}',
+                        Text('₹${_totalReceived.toStringAsFixed(2)}',
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.blue)),
@@ -420,7 +492,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Paid to Agencies (Client):'),
-                        Text('\$${_paidByClientUntilToday.toStringAsFixed(2)}',
+                        Text('₹${_paidByClientUntilToday.toStringAsFixed(2)}',
                             style: const TextStyle(color: Colors.red)),
                       ],
                     ),
@@ -429,7 +501,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Future Client Payments:', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
-                          Text('\$${futureClientPayments.toStringAsFixed(2)}', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
+                          Text('₹${futureClientPayments.toStringAsFixed(2)}', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey)),
                         ],
                       ),
                     const Divider(),
@@ -439,7 +511,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                         const Text('Current Balance:',
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold)),
-                        Text('\$${currentBalance.toStringAsFixed(2)}',
+                        Text('₹${currentBalance.toStringAsFixed(2)}',
                             style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -454,7 +526,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                       children: [
                         const Text('Paid by SELF (Until Today):',
                             style: TextStyle(fontStyle: FontStyle.italic)),
-                        Text('\$${_paidBySelfUntilToday.toStringAsFixed(2)}',
+                        Text('₹${_paidBySelfUntilToday.toStringAsFixed(2)}',
                             style: const TextStyle(
                                 fontStyle: FontStyle.italic,
                                 color: Colors.orange)),
@@ -465,7 +537,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Future SELF Payments:', style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey, fontSize: 12)),
-                          Text('\$${futureSelfPayments.toStringAsFixed(2)}', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey, fontSize: 12)),
+                          Text('₹${futureSelfPayments.toStringAsFixed(2)}', style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey, fontSize: 12)),
                         ],
                       ),
                   ],
@@ -649,7 +721,7 @@ class _ContributionHistoryScreenState extends State<ContributionHistoryScreen> {
                 final item = _history[index];
                 return ListTile(
                   leading: const Icon(Icons.monetization_on, color: Colors.green),
-                  title: Text('\$${item.amount.toStringAsFixed(2)}'),
+                  title: Text('₹${item.amount.toStringAsFixed(2)}'),
                   subtitle: Text(DateFormat('yyyy-MM-dd').format(item.date)),
                   trailing: IconButton(
                     icon: const Icon(Icons.edit),
@@ -673,11 +745,34 @@ class AgencyDetailScreen extends StatefulWidget {
 class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   List<Payment> _payments = [];
+  final ImagePicker _picker = ImagePicker();
+  Directory? _appDir;
 
   @override
   void initState() {
     super.initState();
+    _initAppDir();
     _refreshPayments();
+  }
+
+  void _initAppDir() async {
+    final dir = await getApplicationDocumentsDirectory();
+    setState(() {
+      _appDir = dir;
+    });
+  }
+
+  Future<String?> _saveImage(XFile? image) async {
+    if (image == null) return null;
+    try {
+      final appDir = _appDir ?? await getApplicationDocumentsDirectory();
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${path.basename(image.path)}';
+      await File(image.path).copy('${appDir.path}/$fileName');
+      return fileName; // Returns FILENAME only
+    } catch (e) {
+      debugPrint("Error saving image: $e");
+      return null;
+    }
   }
 
   void _refreshPayments() async {
@@ -687,10 +782,35 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
     });
   }
 
+  void _showFullScreenReceipt(String receiptPath) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              title: const Text('Receipt'),
+              leading: IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+            ),
+            Expanded(
+              child: _appDir == null
+                  ? const Center(child: CircularProgressIndicator())
+                  : Image.file(File('${_appDir!.path}/$receiptPath'), fit: BoxFit.contain),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showPaymentDialog({Payment? payment}) {
     final amountController = TextEditingController(text: payment?.amount.toString());
+    final qtyController = TextEditingController(text: (payment?.qty ?? 1.0).toString());
+    final remarksController = TextEditingController(text: payment?.remarks ?? '');
     DateTime selectedDate = payment?.date ?? DateTime.now();
     String paymentGivenBy = payment?.paymentGivenBy ?? 'Client';
+    String? localReceiptPath = payment?.receiptPath;
 
     showDialog(
       context: context,
@@ -705,6 +825,16 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
                   controller: amountController,
                   decoration: const InputDecoration(labelText: 'Amount'),
                   keyboardType: TextInputType.number,
+                ),
+                TextField(
+                  controller: qtyController,
+                  decoration: const InputDecoration(labelText: 'Quantity (Default: 1)'),
+                  keyboardType: TextInputType.number,
+                ),
+                TextField(
+                  controller: remarksController,
+                  decoration: const InputDecoration(labelText: 'Remarks'),
+                  maxLines: 2,
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -728,7 +858,7 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
                 ),
                 const SizedBox(height: 16),
                 DropdownButtonFormField<String>(
-                  initialValue: paymentGivenBy,
+                  value: paymentGivenBy,
                   decoration: const InputDecoration(labelText: 'Payment Given By'),
                   items: ['Client', 'Self'].map((String value) {
                     return DropdownMenuItem<String>(
@@ -739,6 +869,57 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
                   onChanged: (newValue) {
                     setDialogState(() => paymentGivenBy = newValue!);
                   },
+                ),
+                const SizedBox(height: 20),
+                if (localReceiptPath != null && _appDir != null)
+                  SizedBox(
+                    width: double.maxFinite,
+                    child: Stack(
+                      children: [
+                        Image.file(File('${_appDir!.path}/$localReceiptPath'), height: 120, width: double.infinity, fit: BoxFit.cover),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: CircleAvatar(
+                            backgroundColor: Colors.red,
+                            radius: 15,
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                              onPressed: () => setDialogState(() => localReceiptPath = null),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+                        if (image != null) {
+                          final savedPath = await _saveImage(image);
+                          setDialogState(() => localReceiptPath = savedPath);
+                        }
+                      },
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Camera'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+                        if (image != null) {
+                          final savedPath = await _saveImage(image);
+                          setDialogState(() => localReceiptPath = savedPath);
+                        }
+                      },
+                      icon: const Icon(Icons.photo_library),
+                      label: const Text('Gallery'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -775,6 +956,9 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
                     amount: double.tryParse(amountController.text) ?? 0.0,
                     date: selectedDate,
                     paymentGivenBy: paymentGivenBy,
+                    qty: double.tryParse(qtyController.text) ?? 1.0,
+                    remarks: remarksController.text,
+                    receiptPath: localReceiptPath,
                   );
                   if (payment == null) {
                     await _dbHelper.insertPayment(newPayment);
@@ -809,6 +993,7 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
                     itemBuilder: (context, index) {
                       final payment = _payments[index];
                       final isFuture = payment.date.isAfter(DateTime.now());
+                      final effectiveAmount = payment.amount * payment.qty;
                       return ListTile(
                         leading: Icon(
                           payment.paymentGivenBy == 'Client'
@@ -818,12 +1003,48 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
                               ? Colors.blue
                               : Colors.orange,
                         ),
-                        title: Text('\$${payment.amount.toStringAsFixed(2)}'),
-                        subtitle: Text(
-                            'By: ${payment.paymentGivenBy} | Date: ${DateFormat('yyyy-MM-dd').format(payment.date)}${isFuture ? " (Planned)" : ""}'),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _showPaymentDialog(payment: payment),
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('₹${effectiveAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            if (payment.qty != 1.0)
+                              Text('(₹${payment.amount.toStringAsFixed(2)} x ${payment.qty})', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                          ],
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                                'By: ${payment.paymentGivenBy} | Date: ${DateFormat('yyyy-MM-dd').format(payment.date)}${isFuture ? " (Planned)" : ""}'),
+                            if (payment.remarks.isNotEmpty)
+                              Text('Remarks: ${payment.remarks}', style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 12)),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (payment.receiptPath != null && _appDir != null)
+                              GestureDetector(
+                                onTap: () => _showFullScreenReceipt(payment.receiptPath!),
+                                child: Container(
+                                  margin: const EdgeInsets.only(right: 8),
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey.shade300),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Image.file(File('${_appDir!.path}/${payment.receiptPath!}'), fit: BoxFit.cover),
+                                  ),
+                                ),
+                              ),
+                            IconButton(
+                              icon: const Icon(Icons.edit),
+                              onPressed: () => _showPaymentDialog(payment: payment),
+                            ),
+                          ],
                         ),
                       );
                     },
@@ -840,6 +1061,8 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
   }
 }
 
+enum AnalyticsView { both, client, self, custom }
+
 class AnalyticsScreen extends StatefulWidget {
   final Client client;
   const AnalyticsScreen({super.key, required this.client});
@@ -852,7 +1075,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final DatabaseHelper _dbHelper = DatabaseHelper();
   List<Agency> _agencies = [];
   Map<int, List<Payment>> _agencyPayments = {};
+  List<Map<String, dynamic>> _allPayments = [];
   bool _isLoading = true;
+  AnalyticsView _selectedView = AnalyticsView.both;
 
   @override
   void initState() {
@@ -873,6 +1098,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     setState(() {
       _agencies = agencies;
       _agencyPayments = paymentMap;
+      _allPayments = allPaymentsRaw;
       _isLoading = false;
     });
   }
@@ -882,12 +1108,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final font = await PdfGoogleFonts.robotoRegular();
     final boldFont = await PdfGoogleFonts.robotoBold();
     
-    final clientRows = _generateDataRows('Client', spw, epw, scw, ecw);
-    final selfRows = _generateDataRows('Self', spw, epw, scw, ecw);
-
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: PdfPageFormat.a4.copyWith(marginBottom: 1.5 * PdfPageFormat.cm),
         theme: pw.ThemeData.withFont(base: font, bold: boldFont),
         build: (pw.Context context) {
           return [
@@ -896,18 +1119,85 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             pw.Paragraph(text: 'Date: ${DateFormat('yyyy-MM-dd').format(DateTime.now())}'),
             pw.SizedBox(height: 20),
             
-            pw.Text('Payments by Client', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-            _buildPdfTable(clientRows),
-            pw.SizedBox(height: 30),
+            if (_selectedView == AnalyticsView.both || _selectedView == AnalyticsView.client) ...[
+              pw.Text('Payments by Client', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              _buildPdfTable(_generateDataRows('Client', spw, epw, scw, ecw)),
+            ],
             
-            pw.Text('Payments by Self', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-            _buildPdfTable(selfRows),
+            if (_selectedView == AnalyticsView.both) pw.SizedBox(height: 30),
+            
+            if (_selectedView == AnalyticsView.both || _selectedView == AnalyticsView.self) ...[
+              pw.Text('Payments by Self', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              _buildPdfTable(_generateDataRows('Self', spw, epw, scw, ecw)),
+            ],
+
+            if (_selectedView == AnalyticsView.custom) ...[
+              pw.Text('Detailed Payment Report (All)', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 10),
+              _buildCustomPdfTable(_generateCustomDataRows()),
+            ],
           ];
         },
       ),
     );
 
     await Printing.layoutPdf(onLayout: (PdfPageFormat format) async => pdf.save());
+  }
+
+  pw.Widget _buildCustomPdfTable(List<List<String>> data) {
+    return pw.TableHelper.fromTextArray(
+      headers: ['Date', 'Agency', 'Amount', 'Qty', 'Total', 'Receipt', 'Remarks'],
+      data: data,
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+      cellAlignment: pw.Alignment.centerLeft,
+      columnWidths: {
+        0: const pw.FlexColumnWidth(1.2),
+        1: const pw.FlexColumnWidth(2),
+        2: const pw.FlexColumnWidth(1),
+        3: const pw.FlexColumnWidth(0.5),
+        4: const pw.FlexColumnWidth(1),
+        5: const pw.FlexColumnWidth(0.8),
+        6: const pw.FlexColumnWidth(2),
+      },
+    );
+  }
+
+  List<List<String>> _generateCustomDataRows() {
+    List<List<String>> data = [];
+    double grandTotal = 0;
+
+    // Sort by date
+    final sortedPayments = List<Map<String, dynamic>>.from(_allPayments);
+    sortedPayments.sort((a, b) => DateTime.parse(a['date']).compareTo(DateTime.parse(b['date'])));
+
+    for (var p in sortedPayments) {
+      double amount = (p['amount'] as num).toDouble();
+      double qty = (p['qty'] as num?)?.toDouble() ?? 1.0;
+      double total = amount * qty;
+      grandTotal += total;
+
+      data.add([
+        DateFormat('yyyy-MM-dd').format(DateTime.parse(p['date'])),
+        p['agency_name'] ?? 'Unknown',
+        amount.toStringAsFixed(2),
+        qty.toStringAsFixed(2),
+        total.toStringAsFixed(2),
+        p['receipt_path'] != null ? 'Yes' : 'No',
+        p['remarks'] ?? '',
+      ]);
+    }
+
+    data.add([
+      'TOTAL',
+      '',
+      '',
+      '',
+      grandTotal.toStringAsFixed(2),
+      '',
+      '',
+    ]);
+    return data;
   }
 
   pw.Widget _buildPdfTable(List<List<String>> data) {
@@ -933,12 +1223,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
       for (var p in payments) {
         if (p.paymentGivenBy != source) continue;
+        double effectiveAmount = p.amount * p.qty;
         if (p.date.isAfter(spw.subtract(const Duration(seconds: 1))) && p.date.isBefore(epw.add(const Duration(seconds: 1)))) {
-          prevSum += p.amount;
+          prevSum += effectiveAmount;
         } else if (p.date.isAfter(scw.subtract(const Duration(seconds: 1))) && p.date.isBefore(ecw.add(const Duration(seconds: 1)))) {
-          currSum += p.amount;
+          currSum += effectiveAmount;
         } else if (p.date.isAfter(ecw)) {
-          futureSum += p.amount;
+          futureSum += effectiveAmount;
         }
       }
 
@@ -991,14 +1282,158 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ),
       body: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _buildSection('Payments by Client', 'Client', startOfPrevWeek, endOfPrevWeek, startOfCurrWeek, endOfCurrWeek),
+            const SizedBox(height: 16),
+            SegmentedButton<AnalyticsView>(
+              segments: const [
+                ButtonSegment(value: AnalyticsView.both, label: Text('Both'), icon: Icon(Icons.all_inclusive)),
+                ButtonSegment(value: AnalyticsView.client, label: Text('Client'), icon: Icon(Icons.person)),
+                ButtonSegment(value: AnalyticsView.self, label: Text('Self'), icon: Icon(Icons.account_circle)),
+                ButtonSegment(value: AnalyticsView.custom, label: Text('Custom'), icon: Icon(Icons.list_alt)),
+              ],
+              selected: {_selectedView},
+              onSelectionChanged: (newSelection) {
+                setState(() {
+                  _selectedView = newSelection.first;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            if (_selectedView == AnalyticsView.both || _selectedView == AnalyticsView.client)
+              _buildSection('Payments by Client', 'Client', startOfPrevWeek, endOfPrevWeek, startOfCurrWeek, endOfCurrWeek),
+            if (_selectedView == AnalyticsView.both) const Divider(height: 40),
+            if (_selectedView == AnalyticsView.both || _selectedView == AnalyticsView.self)
+              _buildSection('Payments by Self', 'Self', startOfPrevWeek, endOfPrevWeek, startOfCurrWeek, endOfCurrWeek),
+            if (_selectedView == AnalyticsView.custom)
+              _buildCustomSection(),
             const SizedBox(height: 20),
-            _buildSection('Payments by Self', 'Self', startOfPrevWeek, endOfPrevWeek, startOfCurrWeek, endOfCurrWeek),
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _showReceiptDialog(String receiptFilename) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final fullPath = path.join(directory.path, receiptFilename);
+    final file = File(fullPath);
+
+    if (await file.exists()) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => Dialog(
+          insetPadding: const EdgeInsets.all(10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppBar(
+                title: const Text('Receipt View'),
+                automaticallyImplyLeading: false,
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.share),
+                    tooltip: 'Share Receipt',
+                    onPressed: () {
+                      Share.shareXFiles([XFile(fullPath)], text: 'Receipt from Expense Tracker');
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  )
+                ],
+              ),
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: InteractiveViewer(
+                    panEnabled: true,
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Image.file(file, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Receipt image not found.')));
+    }
+  }
+
+  Widget _buildCustomSection() {
+    final sortedPayments = List<Map<String, dynamic>>.from(_allPayments);
+    sortedPayments.sort((a, b) => DateTime.parse(a['date']).compareTo(DateTime.parse(b['date'])));
+    
+    double grandTotal = 0;
+    for (var p in sortedPayments) {
+      grandTotal += (p['amount'] as num).toDouble() * ((p['qty'] as num?)?.toDouble() ?? 1.0);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text('Detailed Payment Report (All)', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: const [
+              DataColumn(label: Text('Date')),
+              DataColumn(label: Text('Agency')),
+              DataColumn(label: Text('Amount')),
+              DataColumn(label: Text('Qty')),
+              DataColumn(label: Text('Total')),
+              DataColumn(label: Text('Receipt')),
+              DataColumn(label: Text('Remarks')),
+            ],
+            rows: [
+              ...sortedPayments.map((p) {
+                final amount = (p['amount'] as num).toDouble();
+                final qty = (p['qty'] as num?)?.toDouble() ?? 1.0;
+                final total = amount * qty;
+                final receiptPath = p['receipt_path'] as String?;
+
+                return DataRow(cells: [
+                  DataCell(Text(DateFormat('yyyy-MM-dd').format(DateTime.parse(p['date'])))),
+                  DataCell(Text(p['agency_name'] ?? 'Unknown')),
+                  DataCell(Text('₹${amount.toStringAsFixed(2)}')),
+                  DataCell(Text(qty.toStringAsFixed(2))),
+                  DataCell(Text('₹${total.toStringAsFixed(2)}')),
+                  DataCell(
+                    receiptPath != null
+                        ? InkWell(
+                            onTap: () => _showReceiptDialog(receiptPath),
+                            child: const Text('View', style: TextStyle(color: Colors.blue, decoration: TextDecoration.underline)),
+                          )
+                        : const Text('-'),
+                  ),
+                  DataCell(Text(p['remarks'] ?? '')),
+                ]);
+              }),
+              DataRow(
+                color: WidgetStateProperty.all(Colors.grey.shade200),
+                cells: [
+                  const DataCell(Text('TOTAL', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataCell(Text('')),
+                  const DataCell(Text('')),
+                  const DataCell(Text('')),
+                  DataCell(Text('₹${grandTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                  const DataCell(Text('')),
+                  const DataCell(Text('')),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

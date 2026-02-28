@@ -23,7 +23,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'expense_tracker.db');
     return await openDatabase(
       path,
-      version: 5,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
@@ -71,6 +71,9 @@ class DatabaseHelper {
         amount REAL NOT NULL,
         date TEXT NOT NULL,
         payment_given_by TEXT NOT NULL,
+        qty REAL NOT NULL DEFAULT 1.0,
+        remarks TEXT NOT NULL DEFAULT '',
+        receipt_path TEXT,
         FOREIGN KEY (agency_id) REFERENCES agencies (id) ON DELETE CASCADE
       )
     ''');
@@ -83,6 +86,15 @@ class DatabaseHelper {
       await db.execute('DROP TABLE IF EXISTS agencies');
       await db.execute('DROP TABLE IF EXISTS payments');
       await _onCreate(db, newVersion);
+    } else {
+      if (oldVersion == 5) {
+        await db.execute('ALTER TABLE payments ADD COLUMN qty REAL NOT NULL DEFAULT 1.0');
+        await db.execute('ALTER TABLE payments ADD COLUMN remarks TEXT NOT NULL DEFAULT \'\'');
+        oldVersion = 6;
+      }
+      if (oldVersion == 6) {
+        await db.execute('ALTER TABLE payments ADD COLUMN receipt_path TEXT');
+      }
     }
   }
 
@@ -183,7 +195,7 @@ class DatabaseHelper {
   Future<double> getTotalPaymentsBySource(int clientId, String source, {DateTime? upToDate}) async {
     Database db = await database;
     String query = '''
-      SELECT SUM(p.amount) as total 
+      SELECT SUM(p.amount * p.qty) as total 
       FROM payments p 
       JOIN agencies a ON p.agency_id = a.id 
       WHERE a.client_id = ? AND p.payment_given_by = ?
@@ -207,5 +219,21 @@ class DatabaseHelper {
       JOIN agencies a ON p.agency_id = a.id 
       WHERE a.client_id = ?
     ''', [clientId]);
+  }
+
+  Future<void> clearAllData() async {
+    Database db = await database;
+    await db.delete('clients');
+    // Cascading deletes will handle the rest
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>> getAllDataForBackup() async {
+    Database db = await database;
+    return {
+      'clients': await db.query('clients'),
+      'client_contributions': await db.query('client_contributions'),
+      'agencies': await db.query('agencies'),
+      'payments': await db.query('payments'),
+    };
   }
 }
