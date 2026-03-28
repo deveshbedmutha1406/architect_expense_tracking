@@ -308,6 +308,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
   void _showAddContributionDialog() {
     final amountController = TextEditingController();
     DateTime selectedDate = DateTime.now();
+    String mode = 'Online';
 
     showDialog(
       context: context,
@@ -321,6 +322,18 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                 controller: amountController,
                 decoration: const InputDecoration(labelText: 'Amount Received'),
                 keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Payment Mode'),
+                value: mode,
+                items: const [
+                  DropdownMenuItem(value: 'Online', child: Text('Online')),
+                  DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => mode = val);
+                },
               ),
               const SizedBox(height: 16),
               Row(
@@ -355,6 +368,7 @@ class _ClientDetailScreenState extends State<ClientDetailScreen> {
                     clientId: widget.client.id!,
                     amount: double.tryParse(amountController.text) ?? 0.0,
                     date: selectedDate,
+                    mode: mode,
                   ));
                   _refreshData();
                   if (context.mounted) Navigator.pop(context);
@@ -630,6 +644,7 @@ class _ContributionHistoryScreenState extends State<ContributionHistoryScreen> {
   void _showEditDialog(ClientContribution contribution) {
     final amountController = TextEditingController(text: contribution.amount.toString());
     DateTime selectedDate = contribution.date;
+    String mode = contribution.mode;
 
     showDialog(
       context: context,
@@ -643,6 +658,18 @@ class _ContributionHistoryScreenState extends State<ContributionHistoryScreen> {
                 controller: amountController,
                 decoration: const InputDecoration(labelText: 'Amount'),
                 keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Payment Mode'),
+                value: mode,
+                items: const [
+                  DropdownMenuItem(value: 'Online', child: Text('Online')),
+                  DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                ],
+                onChanged: (val) {
+                  if (val != null) setDialogState(() => mode = val);
+                },
               ),
               const SizedBox(height: 16),
               Row(
@@ -696,6 +723,7 @@ class _ContributionHistoryScreenState extends State<ContributionHistoryScreen> {
                     clientId: contribution.clientId,
                     amount: double.tryParse(amountController.text) ?? 0.0,
                     date: selectedDate,
+                    mode: mode,
                   ));
                   _refreshHistory();
                   if (context.mounted) Navigator.pop(context);
@@ -721,7 +749,7 @@ class _ContributionHistoryScreenState extends State<ContributionHistoryScreen> {
                 final item = _history[index];
                 return ListTile(
                   leading: const Icon(Icons.monetization_on, color: Colors.green),
-                  title: Text('₹${item.amount.toStringAsFixed(2)}'),
+                  title: Text('₹${item.amount.toStringAsFixed(2)} (${item.mode})'),
                   subtitle: Text(DateFormat('yyyy-MM-dd').format(item.date)),
                   trailing: IconButton(
                     icon: const Icon(Icons.edit),
@@ -1061,7 +1089,7 @@ class _AgencyDetailScreenState extends State<AgencyDetailScreen> {
   }
 }
 
-enum AnalyticsView { both, client, self, custom }
+enum AnalyticsView { both, client, self, custom, received }
 
 class AnalyticsScreen extends StatefulWidget {
   final Client client;
@@ -1076,6 +1104,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<Agency> _agencies = [];
   Map<int, List<Payment>> _agencyPayments = {};
   List<Map<String, dynamic>> _allPayments = [];
+  List<ClientContribution> _contributions = [];
   bool _isLoading = true;
   AnalyticsView _selectedView = AnalyticsView.both;
 
@@ -1088,6 +1117,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   void _loadData() async {
     final agencies = await _dbHelper.getAgenciesByClient(widget.client.id!);
     final allPaymentsRaw = await _dbHelper.getAllPaymentsForClient(widget.client.id!);
+    final contributions = await _dbHelper.getContributionsByClient(widget.client.id!);
     
     Map<int, List<Payment>> paymentMap = {};
     for (var raw in allPaymentsRaw) {
@@ -1099,6 +1129,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _agencies = agencies;
       _agencyPayments = paymentMap;
       _allPayments = allPaymentsRaw;
+      _contributions = contributions;
       _isLoading = false;
     });
   }
@@ -1135,6 +1166,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               pw.Text('Detailed Payment Report (All)', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
               pw.SizedBox(height: 10),
               _buildCustomPdfTable(_generateCustomDataRows()),
+            ],
+
+            if (_selectedView == AnalyticsView.received) ...[
+              pw.Text('Payment Received from Client', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 10),
+              _buildReceivedPdfTable(_generateReceivedDataRows()),
             ],
           ];
         },
@@ -1285,19 +1322,30 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const SizedBox(height: 16),
-            SegmentedButton<AnalyticsView>(
-              segments: const [
-                ButtonSegment(value: AnalyticsView.both, label: Text('Both'), icon: Icon(Icons.all_inclusive)),
-                ButtonSegment(value: AnalyticsView.client, label: Text('Client'), icon: Icon(Icons.person)),
-                ButtonSegment(value: AnalyticsView.self, label: Text('Self'), icon: Icon(Icons.account_circle)),
-                ButtonSegment(value: AnalyticsView.custom, label: Text('Custom'), icon: Icon(Icons.list_alt)),
-              ],
-              selected: {_selectedView},
-              onSelectionChanged: (newSelection) {
-                setState(() {
-                  _selectedView = newSelection.first;
-                });
-              },
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: DropdownButtonFormField<AnalyticsView>(
+                decoration: const InputDecoration(
+                  labelText: 'Select Report Type',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.analytics),
+                ),
+                value: _selectedView,
+                items: const [
+                  DropdownMenuItem(value: AnalyticsView.both, child: Text('Both (Client & Self)')),
+                  DropdownMenuItem(value: AnalyticsView.client, child: Text('Payments by Client')),
+                  DropdownMenuItem(value: AnalyticsView.self, child: Text('Payments by Self')),
+                  DropdownMenuItem(value: AnalyticsView.custom, child: Text('Detailed Custom Report')),
+                  DropdownMenuItem(value: AnalyticsView.received, child: Text('Received from Client')),
+                ],
+                onChanged: (AnalyticsView? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _selectedView = newValue;
+                    });
+                  }
+                },
+              ),
             ),
             const SizedBox(height: 16),
             if (_selectedView == AnalyticsView.both || _selectedView == AnalyticsView.client)
@@ -1307,6 +1355,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               _buildSection('Payments by Self', 'Self', startOfPrevWeek, endOfPrevWeek, startOfCurrWeek, endOfCurrWeek),
             if (_selectedView == AnalyticsView.custom)
               _buildCustomSection(),
+            if (_selectedView == AnalyticsView.received)
+              _buildReceivedSection(),
             const SizedBox(height: 20),
           ],
         ),
@@ -1470,5 +1520,78 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildReceivedSection() {
+    double totalReceived = 0;
+    for (var c in _contributions) {
+      totalReceived += c.amount;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text('Payment Received from Client', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: const [
+              DataColumn(label: Text('Date')),
+              DataColumn(label: Text('Mode')),
+              DataColumn(label: Text('Amount')),
+            ],
+            rows: [
+              ..._contributions.map((c) => DataRow(cells: [
+                    DataCell(Text(DateFormat('yyyy-MM-dd').format(c.date))),
+                    DataCell(Text(c.mode)),
+                    DataCell(Text('₹${c.amount.toStringAsFixed(2)}')),
+                  ])),
+              DataRow(
+                color: WidgetStateProperty.all(Colors.grey.shade200),
+                cells: [
+                  const DataCell(Text('TOTAL', style: TextStyle(fontWeight: FontWeight.bold))),
+                  const DataCell(Text('')),
+                  DataCell(Text('₹${totalReceived.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _buildReceivedPdfTable(List<List<String>> data) {
+    return pw.TableHelper.fromTextArray(
+      headers: ['Date', 'Mode', 'Amount'],
+      data: data,
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+      cellAlignment: pw.Alignment.centerLeft,
+    );
+  }
+
+  List<List<String>> _generateReceivedDataRows() {
+    List<List<String>> data = [];
+    double grandTotal = 0;
+
+    for (var c in _contributions) {
+      grandTotal += c.amount;
+      data.add([
+        DateFormat('yyyy-MM-dd').format(c.date),
+        c.mode,
+        c.amount.toStringAsFixed(2),
+      ]);
+    }
+
+    data.add([
+      'TOTAL',
+      '',
+      grandTotal.toStringAsFixed(2),
+    ]);
+    return data;
   }
 }

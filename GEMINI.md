@@ -12,7 +12,7 @@ A Flutter application designed for architects to track client projects, receive 
 - **Date Handling:** `intl`
 - **Media & Files:** `image_picker`, `path_provider`, `share_plus`, `file_picker`, `archive`
 
-## Database Schema (Version 7)
+## Database Schema (Version 8)
 The database uses **Cascading Deletes** (requires `PRAGMA foreign_keys = ON`).
 
 ### 1. `clients` Table
@@ -27,6 +27,7 @@ The database uses **Cascading Deletes** (requires `PRAGMA foreign_keys = ON`).
 - `client_id`: INTEGER (FK -> clients.id, CASCADE)
 - `amount`: REAL
 - `date`: TEXT (ISO8601)
+- `mode`: TEXT (Payment mode: 'Online' or 'Cash')
 
 ### 3. `agencies` Table
 - `id`: INTEGER PRIMARY KEY AUTOINCREMENT
@@ -56,17 +57,18 @@ The database uses **Cascading Deletes** (requires `PRAGMA foreign_keys = ON`).
 - **Clients:** Create, Read, Edit, Delete (removes all associated data).
 - **Agencies:** Create, Read (per client), Edit (rename), Delete (removes associated payments).
 - **Payments:** Create, Read (per agency), Edit (with qty/remarks/receipts), Delete.
-- **Money History:** View and edit all historical contributions from the client.
+- **Money History:** View and edit all historical contributions from the client, including payment mode.
 
 ### Data Management
 - **Receipt Management:** Capture/Select receipts via Camera or Gallery. Images are stored internally.
 - **Backup & Restore:** Export a single `.zip` file containing the JSON database dump and all receipt images. Import a ZIP to migrate data between devices.
 
 ### Analytics & Reporting
-- **Analytics Screen:** Provides two types of reports:
+- **Analytics Screen:** Provides multiple report types selectable via a dropdown:
     - **Summary View:** (Both, Client, or Self) showing Previous Week, Current Week, and Future payment totals for each agency.
     - **Custom Detailed Report:** A comprehensive list of all payments (past, present, future) including Date, Agency, Amount, Qty, Total, Receipt Status, and Remarks.
-- **PDF Export:** Generates a professional summary or detailed report reflecting the current view selection.
+    - **Received from Client:** A chronological list of all payments received from the client with a grand total, including the payment mode (Online/Cash).
+- **PDF Export:** Generates a professional summary, detailed, or received-contribution report reflecting the current view selection.
 
 ## Project Structure
 - `lib/models/`: Data classes (`Client`, `Agency`, `Payment`, `ClientContribution`).
@@ -83,6 +85,13 @@ The database uses **Cascading Deletes** (requires `PRAGMA foreign_keys = ON`).
 - **Stability & Fixes:** Resolved rendering issues in `AlertDialog`, fixed icon name errors, and added `context.mounted` checks for safer async navigation.
 - **Architecture Update:** Migrated to relative paths for all stored media and upgraded DB to Version 7.
 
+## Session Summary (Mar 07, 2026)
+- **New Report Option:** Added "Received from Client" report to Analytics, showing all historical contributions with their dates and total sum.
+- **UI Refinement:** Replaced horizontal report type selection with a scalable `DropdownButtonFormField` for better accessibility.
+- **PDF Export Enhancements:** Integrated the new "Received" report into the PDF generation system.
+- **Data Integration:** Enhanced `AnalyticsScreen` to load and display `ClientContribution` data directly from the database.
+- **Payment Mode:** Added 'mode' (Online/Cash) to client contributions. Updated DB to Version 8, modified models, and updated Analytics/PDF reports to include this field.
+
 ## Developer Notes
 - Always call `WidgetsFlutterBinding.ensureInitialized()` in `main()` to support plugin initialization.
-- Database Version 7 is the current stable schema.
+- Database Version 8 is the current stable schema.

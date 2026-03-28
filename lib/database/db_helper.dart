@@ -23,7 +23,7 @@ class DatabaseHelper {
     String path = join(await getDatabasesPath(), 'expense_tracker.db');
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
@@ -51,6 +51,7 @@ class DatabaseHelper {
         client_id INTEGER NOT NULL,
         amount REAL NOT NULL,
         date TEXT NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'Online',
         FOREIGN KEY (client_id) REFERENCES clients (id) ON DELETE CASCADE
       )
     ''');
@@ -94,6 +95,10 @@ class DatabaseHelper {
       }
       if (oldVersion == 6) {
         await db.execute('ALTER TABLE payments ADD COLUMN receipt_path TEXT');
+        oldVersion = 7;
+      }
+      if (oldVersion == 7) {
+        await db.execute('ALTER TABLE client_contributions ADD COLUMN mode TEXT NOT NULL DEFAULT \'Online\'');
       }
     }
   }

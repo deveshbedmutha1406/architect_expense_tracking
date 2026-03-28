@@ -3,12 +3,14 @@ class ClientContribution {
   final int clientId;
   final double amount;
   final DateTime date;
+  final String mode;
 
   ClientContribution({
     this.id,
     required this.clientId,
     required this.amount,
     required this.date,
+    this.mode = 'Online',
   });
 
   Map<String, dynamic> toMap() {
@@ -17,6 +19,7 @@ class ClientContribution {
       'client_id': clientId,
       'amount': amount,
       'date': date.toIso8601String(),
+      'mode': mode,
     };
   }
 
@@ -26,6 +29,7 @@ class ClientContribution {
       clientId: map['client_id'],
       amount: map['amount'],
       date: DateTime.parse(map['date']),
+      mode: map['mode'] ?? 'Online',
     );
   }
 }
